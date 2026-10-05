@@ -1,96 +1,64 @@
 import os
+import re
 import json
 import requests
 from bs4 import BeautifulSoup
 
 URL = "https://thepaan.co.kr/board/watch"
+BASE = "https://thepaan.co.kr"
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 DATA_FILE = "seen.json"
+LISTING = re.compile(r"/listings/([0-9a-f]{12})/")
 
 
 def get_seen():
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return set(json.load(f))
-    except:
-        return set()
+            return json.load(f)
+    except Exception:
+        return None
 
 
 def save_seen(seen):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(list(seen), f, ensure_ascii=False)
+        json.dump(seen[:1000], f, ensure_ascii=False)
 
 
 def send_telegram(text):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-
     requests.post(
-        url,
-        data={
-            "chat_id": CHAT_ID,
-            "text": text,
-            "disable_web_page_preview": False,
-        },
+        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+        data={"chat_id": CHAT_ID, "text": text},
         timeout=20,
-    )
+    ).raise_for_status()
 
 
 def get_posts():
-    r = requests.get(
-        URL,
-        headers={
-            "User-Agent": "Mozilla/5.0"
-        },
-        timeout=20,
-    )
-
+    r = requests.get(URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
     r.raise_for_status()
-
     soup = BeautifulSoup(r.text, "html.parser")
 
-    posts = []
-
+    posts = {}
     for a in soup.find_all("a", href=True):
-        href = a.get("href", "")
-
-        if "/writing/" not in href:
+        m = LISTING.search(a["href"])
+        if not m:
             continue
-
-        title = a.get_text(" ", strip=True)
-
-        if not title:
+        text = a.get_text(" ", strip=True)
+        if not text or m.group(1) in posts:
             continue
-
-        posts.append({
-            "url": href if href.startswith("http") else "https://thepaan.co.kr" + href,
-            "title": title,
-        })
-
+        href = a["href"]
+        posts[m.group(1)] = {
+            "text": text,
+            "url": href if href.startswith("http") else BASE + href,
+        }
     return posts
 
 
 def main():
-    seen = get_seen()
     posts = get_posts()
+    if not posts:
+        raise SystemExit("매물을 0개 찾음 - 사이트 구조 확인 필요")
 
-    current = set()
-
-    for post in posts:
-        current.add(post["url"])
-
-        if post["url"] not in seen:
-            send_telegram(
-                "🔔 더판 새 판매글\n\n"
-                + post["title"]
-                + "\n\n"
-                + post["url"]
-            )
-
-    save_seen(current)
-
-
-if __name__ == "__main__":
-    main()
+    seen = get_se
