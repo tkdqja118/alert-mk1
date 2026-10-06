@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 URL = "https://thepaan.co.kr/board/watch"
 BASE = "https://thepaan.co.kr"
 SEEN_FILE = "seen.json"
+TOP_N = 10
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
@@ -27,12 +28,15 @@ def fetch_items():
         price = re.search(r"([\d,]+)\s*원", text)
         if not price:
             continue
+        bumped = re.search(r"끌올\s*\d+\s*회", text) is not None
         title = text[price.end():]
-        title = re.sub(r"\s*(끌올\s*\d+회)?\s*조회수.*$", "", title).strip()
+        title = re.sub(r"\s*끌올\s*\d+\s*회.*$", "", title)
+        title = re.sub(r"\s*조회수.*$", "", title).strip()
         items[m.group(1)] = {
             "title": title,
             "price": price.group(1) + "원",
             "sold": text.startswith("판매완료"),
+            "bumped": bumped,
             "url": BASE + a["href"] if a["href"].startswith("/") else a["href"],
         }
     return items
@@ -59,8 +63,8 @@ def main():
             seen = set(json.load(f))
 
     if not first_run:
-        for id_, it in items.items():
-            if id_ in seen or it["sold"]:
+        for pos, (id_, it) in enumerate(items.items()):
+            if id_ in seen or it["sold"] or it["bumped"] or pos >= TOP_N:
                 continue
             send(f"🆕 {it['title']}\n💰 {it['price']}\n{it['url']}")
 
